@@ -1,0 +1,142 @@
+function match3 = findmatch_std(I,S,block,mask,frame,Raz_x,Raz_y,CUT)
+
+% Extract block parameters.
+pSize  = (size(block,1)-1)/2;
+pIndex = 0:2*pSize;
+
+block1=block;
+mask1=mask;
+match3(1:pSize*2+1,1:pSize*2+1,1:3)=0;
+% Store previously-assigned pixels in this block.
+% Note: Don't compare past image border or within mask.
+border = isnan(frame);
+mask   = repmat(~mask & ~border,[1 1 3]);
+block  = block(mask);
+
+% Extract indices of blocks in each row and column.
+% Note: Accelerates search for small source regions.
+blockRows = (1+pSize):(size(I,1)-pSize);
+blockCols = (1+pSize):(size(I,2)-pSize);
+columnSum = sum(S,2)';
+
+
+% Perform exhaustive search for closest-matching block.
+% Note: Only use blocks entirely within source region(s).
+
+for i = find(columnSum(blockRows))
+    for j = find(S(i,blockCols))
+        currSource = S(i+pIndex,j+pIndex);
+        if all(currSource(:))
+            currBlock = I(i+pIndex,j+pIndex,:);
+            
+            currError_RMSE(i,j) = sum((block-currBlock(mask)).^2);
+            
+        end
+    end
+end
+
+currError_RMSE=currError_RMSE./max(max(currError_RMSE));
+
+Kr=currError_RMSE;
+
+for k=1:16
+    step=(k-1)*(pSize*2+1)+1;
+    error = Inf;
+    
+    for i = find(columnSum(blockRows))
+        for j = find(S(i,blockCols))
+            currSource = S(i+pIndex,j+pIndex);
+            
+            if all(currSource(:))
+                currBlock = I(i+pIndex,j+pIndex,:);
+                currError=Kr(i,j);
+                
+                if currError < error
+                    error = currError;
+                    match(step:pSize*2+step,1:pSize*2+1,1:3)= currBlock;
+                    Koord_i(k)=i;
+                    Koord_j(k)=j;
+                    
+                    
+                    L=currBlock(mask);
+                    D=currBlock(~mask);
+                                   
+%                     SKO_L(k,1)=std(L);
+%                     SKO_L(k,2)=mean(L);
+%                     
+%                     SKO_D(k,1)=std(D);
+%                     SKO_D(k,2)=mean(D);
+                    
+                                        SKO_L(k,1)=std(L);
+                    SKO_L(k,2)=mean(L);
+                    
+                    SKO_D(k,1)=std(D);
+                    SKO_D(k,2)=mean(D);
+                    
+                    
+                    
+                end
+                
+            end
+        end
+    end 
+    
+    Kr(Koord_i(k), Koord_j(k))=Inf;
+    %      figure, imshow(match(step:pSize*2+step,1:pSize*2+1,1:3))
+end
+
+
+Rez_SKO=sum(((SKO_L-SKO_D).^2)');
+
+Min=inf;
+
+for k=1:16
+if Rez_SKO(k)<Min
+    Min=Rez_SKO(k);
+    K_Min=k;
+end
+
+end
+
+step=(K_Min-1)*(pSize*2+1)+1;
+
+% step=1;
+
+match3=match(step:pSize*2+step,1:pSize*2+1,1:3);
+
+
+%% patch quilting
+
+if CUT==1
+    
+    B1=block1;
+    B2=match3;
+    MM=double(repmat(~mask1,[1 1 3]));
+    B1(MM==0)=0;
+    [L p]=bwlabel((MM(:,:,1)),4);
+    if p<2
+        [BB,CCC] = mincut(double(B1),double(B2),double(MM));
+        match3=BB;
+    end
+    
+    for ii=1:pSize*2+1
+        for jj=1:pSize*2+1
+            if (match3(ii,jj,1)==0)&&(match3(ii,jj,2)==0)&&(match3(ii,jj,3)==0);
+                match3(ii,jj)=B2(ii,jj);
+            end
+        end
+    end
+    
+end
+
+%% Return updated block (i.e., masked pixels from exemplar).
+% % Note: Assign border pixels as "NaN".
+if CUT==0
+    %     block1  = block1(mask);
+    match3(mask) = block;
+    
+    % match3 = mask.*block1+(~mask).*match3;
+    
+end
+match3(repmat(border,[1 1 3])) = NaN;
+
